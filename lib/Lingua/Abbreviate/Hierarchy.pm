@@ -12,11 +12,11 @@ Lingua::Abbreviate::Hierarchy - Shorten verbose namespaces
 
 =head1 VERSION
 
-This document describes Lingua::Abbreviate::Hierarchy version 0.01
+This document describes Lingua::Abbreviate::Hierarchy version 0.02
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 =head1 SYNOPSIS
 
@@ -36,7 +36,7 @@ our $VERSION = '0.01';
     comp.lang.perl.misc
     comp.lang.perl.advocacy
   ));
-  
+
 =head1 DESCRIPTION
 
 It's a common practice to abbreviate the elements of namespaces
@@ -48,7 +48,7 @@ like this:
 This module performs such abbreviation. It guarantees that generated
 abbreviations are long enough to be unique within the current namespace.
 
-=head1 INTERFACE 
+=head1 INTERFACE
 
 To abbreviate names within a namespace use the module:
 
@@ -94,20 +94,20 @@ The following options are recognised:
 
 =over
 
-=item C<sep>
+=item C<< sep => >> I<string>
 
 The string that separates components in the namespace. For example '.'
 for domain names or '::' for Perl package names;
 
-=item C<only>
+=item C<< only => >> I<number>
 
 Abbreviate only the initial I<N> elements in the name.
 
-=item C<keep>
+=item C<< keep => >> I<number>
 
 Leave I<N> elements at the end of the name unabbreviated.
 
-=item C<max>
+=item C<< max => >> I<number>
 
 Abbreviate from the left until the generated abbreviation contains I<N>
 or fewer characters. If C<only> is specified then at least that many
@@ -117,19 +117,19 @@ elements will be unabbreviated.
 May return more than I<N> characters if the fully abbreviated name is
 still too long.
 
-=item C<trunc>
+=item C<< trunc => >> I<string>
 
 A truncation string (which may be empty). When C<trunc> is supplied the
 generated abbreviation will always be <= C<max> characters and will be
 prefixed by the truncation string.
 
-=item C<flip>
+=item C<< flip => >> I<bool>
 
 Normally we consider the namespace to be rooted at the left (like a
 filename or package name). Set C<flip> to true to process right-rooted
 namespaces (like domain names).
 
-=item C<ns>
+=item C<< ns => >> I<array ref>
 
 Supply a reference to an array containing namespace terms. See
 C<add_namespace> for more details.
@@ -224,7 +224,7 @@ sub _abb {
 
   my $sepp = quotemeta $self->{sep};
   my @path = $self->{flipa}( split /$sepp/, $term );
-  my $join = defined $self->{join} ? $self->{join} : $self->{sep};
+  my $join = $self->_join;
   my $abc  = sub {
     my ( $cnt, @path ) = @_;
     join $join,
@@ -266,12 +266,66 @@ sub _ab {
     @path ? $self->_ab( $nd->{$word}{k}, $limit, @path ) : () );
 }
 
+=head2 C<ex>
+
+Expand an abbreviation created by calling C<ab>. When applied to
+abbreviations created in the current namespace C<ex> will reliably
+expand arbitrary abbreviated terms. It will also pass through 
+non-abbreviated terms unmolested.
+
+If the namespace for expansion is not identical to the namespace for
+abbreviation then the results are unpredictable.
+
+  my @ab = $abr->ab( @terms );      # Abbreviate terms...
+  my @ex = $abr->ex( @ab );         # ...and get them back
+
+=cut
+
+sub ex {
+  my $self = shift;
+  $self->_init_rev unless $self->{rev};
+  my @ex = map { $self->{rcache}{$_} ||= $self->_exx( $_ ) } @_;
+  return wantarray ? @ex : $ex[0];
+}
+
+sub _join {
+  my $self = shift;
+  return defined $self->{join} ? $self->{join} : $self->{sep};
+}
+
+sub _exx {
+  my ( $self, $term ) = @_;
+  my $sepp = quotemeta $self->_join;
+  my @path = $self->{flipa}( split /$sepp/, $term );
+  return join $self->{sep},
+   $self->{flipa}( $self->_ab( $self->{rev}, scalar @path, @path ) );
+}
+
+sub _rev {
+  my ( $self, $nd ) = @_;
+  my $ond = {};
+  while ( my ( $k, $v ) = each %$nd ) {
+    my $nnd = { %$v, a => $k };
+    $nnd->{k} = $self->_rev( $nnd->{k} ) if $nnd->{k};
+    $ond->{ $v->{a} } = $nnd;
+  }
+  return $ond;
+}
+
+sub _init_rev {
+  my $self = shift;
+  $self->_init unless $self->{cache};
+  $self->{rev} = $self->_rev( $self->{ns} );
+}
+
 sub _init {
   my $self = shift;
   $self->_make_ab( $self->{ns} );
   $self->{cache} = {};
 }
 
+# Given a list of unique terms return a hash mapping each term onto an
+# equally unique abbreviation.
 sub _ab_list {
   my ( $self, @w ) = @_;
 
@@ -289,6 +343,7 @@ sub _ab_list {
   }
 }
 
+# Traverse the namespace tree making abbreviations for each node.
 sub _make_ab {
   my ( $self, $nd ) = @_;
   my @kk = keys %$nd;
@@ -308,13 +363,7 @@ __END__
 
 None.
 
-=head1 INCOMPATIBILITIES
-
-None reported.
-
 =head1 BUGS AND LIMITATIONS
-
-No bugs have been reported.
 
 Please report any bugs or feature requests to
 C<bug-lingua-abbreviate-hierarchy@rt.cpan.org>, or through the web interface at
